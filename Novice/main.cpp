@@ -1,63 +1,56 @@
 #include <Novice.h>
-#include <math.h>
+#include <cmath>
 
 const char kWindowTitle[] = "GC2A_02_テイン_タイ_アウン";
 
-struct Vector3 {
-	float x, y, z;
+struct Matrix4x4 {
+	float m[4][4];
 };
 
-Vector3 Add(const Vector3& v1, const Vector3& v2) {
-	Vector3 result;
-	result = {v1.x + v2.x, v1.y + v2.y, v1.z + v2.z};
+Matrix4x4 MakeOrthographicMatrix(float left, float right, float top, float bottom, float nearClip, float farClip) {
+	Matrix4x4 result = {};
+	result.m[0][0] = 2.0f / (right - left);
+	result.m[1][1] = 2.0f / (top - bottom);
+	result.m[2][2] = 1.0f / (farClip - nearClip);
+	result.m[3][0] = (left + right) / (left - right);
+	result.m[3][1] = (top + bottom) / (bottom - top);
+	result.m[3][2] = nearClip / (nearClip - farClip);
+	result.m[3][3] = 1.0f;
 	return result;
 }
 
-Vector3 Subtract(const Vector3& v1, const Vector3& v2) {
-	Vector3 result;
-	result = {v1.x - v2.x, v1.y - v2.y, v1.z - v2.z};
+Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspectRatio, float nearClip, float farClip) {
+	Matrix4x4 result = {};
+	float tanHalfFov = std::tan(fovY / 2.0f);
+	result.m[0][0] = 1.0f / (aspectRatio * tanHalfFov);
+	result.m[1][1] = 1.0f / tanHalfFov;
+	result.m[2][2] = farClip / (farClip - nearClip);
+	result.m[2][3] = 1.0f;
+	result.m[3][2] = (-nearClip * farClip) / (farClip - nearClip);
 	return result;
 }
 
-Vector3 Multiply(float scalar, const Vector3& v) {
-	Vector3 result;
-	result = {scalar * v.x, scalar * v.y, scalar * v.z};
+Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, float minDepth, float maxDepth) {
+	Matrix4x4 result = {};
+	result.m[0][0] = width / 2.0f;
+	result.m[1][1] = -height / 2.0f;
+	result.m[2][2] = maxDepth - minDepth;
+	result.m[3][0] = left + width / 2.0f;
+	result.m[3][1] = top + height / 2.0f;
+	result.m[3][2] = minDepth;
+	result.m[3][3] = 1.0f;
 	return result;
 }
 
-float Dot(const Vector3& v1, const Vector3& v2) {
-	float result;
-	result = {(v1.x * v2.x) + (v1.y * v2.y) + (v1.z * v2.z)};
-	return result;
-};
-
-float Length(const Vector3& v) {
-	float result;
-	result = sqrtf((v.x * v.x) + (v.y * v.y) + (v.z * v.z));
-	return result;
-};
-
-Vector3 Normalize(const Vector3& v) {
-	Vector3 result;
-
-	float length = Length(v);
-
-	if (length != 0.0f) {
-		result = {v.x / length, v.y / length, v.z / length};
-	} else {
-		result = {0.0f};
-	}
-
-	return result;
-};
-
-static const int kColumnWidth = 60;
 static const int kRowHeight = 20;
-void VectorScreenPrintf(int x, int y, const Vector3& vector, const char* label) {
-	Novice::ScreenPrintf(x, y, "%0.2f", vector.x);
-	Novice::ScreenPrintf(x + kColumnWidth, y, "%.02f", vector.y);
-	Novice::ScreenPrintf(x + kColumnWidth * 2, y, "%.02f", vector.z);
-	Novice::ScreenPrintf(x + kColumnWidth * 3, y, "%s", label);
+static const int kColumnWidth = 60;
+void MatrixScreenPrintf(int x, int y, const Matrix4x4& matrix, const char* label) {
+	Novice::ScreenPrintf(x, y - 20, label);
+	for (int i = 0; i < 4; i++) {
+		for (int j = 0; j < 4; j++) {
+			Novice::ScreenPrintf(x + j * kColumnWidth, y + i * kRowHeight, "%6.02f", matrix.m[i][j]);
+		}
+	}
 }
 
 // Windowsアプリでのエントリーポイント(main関数)
@@ -69,10 +62,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// キー入力結果を受け取る箱
 	char keys[256] = {0};
 	char preKeys[256] = {0};
-
-	Vector3 v1{1.0f, 3.0f, -5.0f};
-	Vector3 v2{4.0f, -1.0f, 2.0f};
-	float k = {4.0f};
 
 	// ウィンドウの×ボタンが押されるまでループ
 	while (Novice::ProcessMessage() == 0) {
@@ -87,12 +76,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		/// ↓更新処理ここから
 		///
 
-		Vector3 resultAdd = Add(v1, v2);
-		Vector3 resultSubtract = Subtract(v1, v2);
-		Vector3 resultMultiply = Multiply(k, v1);
-		float resultDot = Dot(v1, v2);
-		float resultLength = Length(v1);
-		Vector3 resultNormalize = Normalize(v2);
+		Matrix4x4 orthographicMatrix = MakeOrthographicMatrix(-160.0f, 160.0f, 200.0f, 300.0f, 0.0f, 1000.0f);
+		Matrix4x4 perspectiveFovMatrix = MakePerspectiveFovMatrix(0.63f, 1.33f, 0.1f, 1000.0f);
+		Matrix4x4 viewportMatrix = MakeViewportMatrix(100.0f, 200.0f, 600.0f, 300.0f, 0.0f, 1.0f);
 
 		///
 		/// ↑更新処理ここまで
@@ -102,12 +88,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		/// ↓描画処理ここから
 		///
 
-		VectorScreenPrintf(0, 0, resultAdd, " : Add");
-		VectorScreenPrintf(0, kRowHeight, resultSubtract, " : Subtract");
-		VectorScreenPrintf(0, kRowHeight * 2, resultMultiply, " : Multiply");
-		Novice::ScreenPrintf(0, kRowHeight * 3, "%.02f  : Dot", resultDot);
-		Novice::ScreenPrintf(0, kRowHeight * 4, "%.02f  : Length", resultLength);
-		VectorScreenPrintf(0, kRowHeight * 5, resultNormalize, " : Normalize");
+		MatrixScreenPrintf(0, 20, orthographicMatrix, "orthographicMatrix");
+		MatrixScreenPrintf(0, (kRowHeight * 5)+20, perspectiveFovMatrix, "perspectiveFovMatrix");
+		MatrixScreenPrintf(0, (kRowHeight * 10)+20, viewportMatrix, "viewportMatrix");
 
 		///
 		/// ↑描画処理ここまで
