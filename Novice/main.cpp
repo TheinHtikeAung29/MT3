@@ -1,10 +1,20 @@
 #include <Novice.h>
-#include <math.h>
+#include <cmath>
+#include <imgui.h>
 
 const char kWindowTitle[] = "GC2A_02_テイン_タイ_アウン";
 
 struct Vector3 {
 	float x, y, z;
+};
+
+struct Matrix4x4 {
+	float m[4][4];
+};
+
+struct Sphere {
+	Vector3 center;
+	float radius;
 };
 
 Vector3 Add(const Vector3& v1, const Vector3& v2) {
@@ -50,6 +60,77 @@ Vector3 Normalize(const Vector3& v) {
 
 	return result;
 };
+
+Vector3 Scale(const Vector3& v, float s) { return {v.x * s, v.y * s, v.z * s}; }
+
+bool IsCollision(const Sphere& s1, const Sphere& s2) {
+	float dist = Length(Subtract(s1.center, s2.center));
+	return dist <= s1.radius + s2.radius;
+}
+
+Matrix4x4 Multiply(const Matrix4x4& m1, const Matrix4x4 m2) { Matrix4x4 result = {};
+	for (int i = 0; i < 4; i++) {
+		for (int j = 0; j < 4; j++) {
+			for (int k = 0; k < 4; k++) {
+				result.m[i][j] += m1.m[i][k] * m2.m[k][j];
+				return result;
+			}
+		}
+	}
+}
+
+Matrix4x4 MakeRotateXMatrix(float angle) { Matrix4x4 r = {};
+	r.m[0][0] = 1.0f;
+	r.m[1][1] = std::cos(angle);
+	r.m[1][2] = std::sin(angle);
+	r.m[2][1] = -std::sin(angle);
+	r.m[2][2] = std::cos(angle);
+	r.m[3][3] = 1.0f;
+}
+
+Matrix4x4 MakeRotateYMatrix(float angle) { Matrix4x4 r = {};
+	r.m[0][0] = std::cos(angle);
+	r.m[0][2] = -std::sin(angle);
+	r.m[1][1] = 1.0f;
+	r.m[2][0] = std::sin(angle);
+	r.m[2][2] = std::cos(angle);
+	r.m[3][3] = 1.0f;
+	return r;
+}
+
+Matrix4x4 MakeRotateZMatrix(float angle) {
+	Matrix4x4 r = {};
+	r.m[0][0] = std::cos(angle);
+	r.m[0][1] = std::sin(angle);
+	r.m[1][0] = -std::sin(angle);
+	r.m[1][1] = std::cos(angle);
+	r.m[2][2] = 1.0f;
+	r.m[3][3] = 1.0f;
+	return r;
+}
+
+Matrix4x4 MakeAffineMatrix(Vector3 scale, Vector3 rotate, Vector3 translate) {
+	Matrix4x4 rotX = MakeRotateXMatrix(rotate.x);
+	Matrix4x4 rotY = MakeRotateYMatrix(rotate.y);
+	Matrix4x4 rotZ = MakeRotateZMatrix(rotate.z);
+	Matrix4x4 rot = Multiply(rotX, Multiply(rotY, rotZ));
+	Matrix4x4 result = {};
+	result.m[0][0] = scale.x * rot.m[0][0];
+	result.m[0][1] = scale.x * rot.m[0][1];
+	result.m[0][2] = scale.x * rot.m[0][2];
+	result.m[1][0] = scale.y * rot.m[1][0];
+	result.m[1][1] = scale.y * rot.m[1][1];
+	result.m[1][2] = scale.y * rot.m[1][2];
+	result.m[2][0] = scale.z * rot.m[2][0];
+	result.m[2][1] = scale.z * rot.m[2][1];
+	result.m[2][2] = scale.z * rot.m[2][2];
+	result.m[3][0] = translate.x;
+	result.m[3][1] = translate.y;
+	result.m[3][2] = translate.z;
+	result.m[3][3] = 1.0f;
+	return result;
+}
+
 
 static const int kColumnWidth = 60;
 static const int kRowHeight = 20;
