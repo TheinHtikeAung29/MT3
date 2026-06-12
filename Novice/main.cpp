@@ -1,101 +1,185 @@
+#define _USE_MATH_DEFINES
 #include <Novice.h>
 #include <cmath>
 #include <imgui.h>
+#include <stdio.h>
 
 const char kWindowTitle[] = "GC2A_02_テイン_タイ_アウン";
 
 const int kWindowWidth = 1280;
 const int kWindowHeight = 720;
 
-typedef struct Vector3 {
+constexpr float kPi = 3.14159265358979323846f;
+
+struct Vector3 {
 	float x, y, z;
-} Vector3;
+};
 
-typedef struct Matrix4x4 {
+struct Matrix4x4 {
 	float m[4][4];
-} Matrix4x4;
+};
 
-typedef struct Sphere {
-	Vector3 center;
-	float radius;
-} Sphere;
+struct Segment {
+	Vector3 origin;
+	Vector3 diff;
+};
 
-typedef struct Plane {
+struct Plane {
 	Vector3 normal;
-	float distance; 
-} Plane;
+	float distance;
+};
 
+Vector3 Subtract(const Vector3& a, const Vector3& b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
 Vector3 Add(const Vector3& a, const Vector3& b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
-
-Vector3 Multiply(float s, const Vector3& v) { return {s * v.x, s * v.y, s * v.z}; }
-
 float Dot(const Vector3& a, const Vector3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-
-float Length(const Vector3& v) { return sqrtf(Dot(v, v)); }
+float LengthSquared(const Vector3& v) { return v.x * v.x + v.y * v.y + v.z * v.z; }
+Vector3 Scale(const Vector3& v, float s) { return {v.x * s, v.y * s, v.z * s}; }
+float Length(const Vector3& v) { return sqrtf(LengthSquared(v)); }
 
 Vector3 Normalize(const Vector3& v) {
 	float len = Length(v);
-	if (len == 0.0f)
-		return {0.0f, 0.0f, 0.0f};
+	if (len < 1e-6f)
+		return {0, 0, 0};
 	return {v.x / len, v.y / len, v.z / len};
 }
 
-Vector3 Cross(const Vector3& v1, const Vector3& v2) { return {v1.y * v2.z - v1.z * v2.y, v1.z * v2.x - v1.x * v2.z, v1.x * v2.y - v1.y * v2.x}; }
+Vector3 Cross(const Vector3& a, const Vector3& b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; }
 
-Matrix4x4 Multiply(const Matrix4x4& m1, const Matrix4x4& m2) {
+Vector3 Perpendicular(const Vector3& v) {
+	if (v.x != 0.0f || v.y != 0.0f)
+		return {-v.y, v.x, 0.0f};
+	return {0.0f, -v.z, v.y};
+}
+
+Vector3 Project(const Vector3& v1, const Vector3& v2) {
+	float d = Dot(v1, v2);
+	float len2 = LengthSquared(v2);
+	if (len2 < 1e-6f)
+		return {0, 0, 0};
+	return Scale(v2, d / len2);
+}
+
+Vector3 ClosestPoint(const Vector3& point, const Segment& segment) {
+	Vector3 toPoint = Subtract(point, segment.origin);
+	float len2 = LengthSquared(segment.diff);
+	if (len2 < 1e-6f)
+		return segment.origin;
+	float t = Dot(toPoint, segment.diff) / len2;
+	t = fmaxf(0.0f, fminf(1.0f, t));
+	return Add(segment.origin, Scale(segment.diff, t));
+}
+
+bool IsCollision(const Segment& segment, const Plane& plane) {
+
+	float dot = Dot(plane.normal, segment.diff);
+
+	if (fabsf(dot) < 1e-6f)
+		return false;
+
+	float t = (plane.distance - Dot(plane.normal, segment.origin)) / dot;
+
+	return t >= 0.0f && t <= 1.0f;
+}
+
+Matrix4x4 Multiply(const Matrix4x4& a, const Matrix4x4& b) {
 	Matrix4x4 result = {};
-	for (int row = 0; row < 4; row++)
-		for (int col = 0; col < 4; col++)
+	for (int i = 0; i < 4; i++)
+		for (int j = 0; j < 4; j++)
 			for (int k = 0; k < 4; k++)
-				result.m[row][col] += m1.m[row][k] * m2.m[k][col];
+				result.m[i][j] += a.m[i][k] * b.m[k][j];
 	return result;
 }
 
+Matrix4x4 MakeTranslateMatrix(const Vector3& t) {
+	Matrix4x4 m = {
+	    {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {t.x, t.y, t.z, 1}}
+    };
+	return m;
+}
+
+Matrix4x4 MakeRotateXMatrix(float angle) {
+	float c = cosf(angle), s = sinf(angle);
+	Matrix4x4 m = {
+	    {{1, 0, 0, 0}, {0, c, s, 0}, {0, -s, c, 0}, {0, 0, 0, 1}}
+    };
+	return m;
+}
+
+Matrix4x4 MakeRotateYMatrix(float angle) {
+	float c = cosf(angle), s = sinf(angle);
+	Matrix4x4 m = {
+	    {{c, 0, -s, 0}, {0, 1, 0, 0}, {s, 0, c, 0}, {0, 0, 0, 1}}
+    };
+	return m;
+}
+
+Matrix4x4 MakeRotateZMatrix(float angle) {
+	float c = cosf(angle), s = sinf(angle);
+	Matrix4x4 m = {
+	    {{c, s, 0, 0}, {-s, c, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}}
+    };
+	return m;
+}
+
+Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspect, float nearZ, float farZ) {
+	float f = 1.0f / tanf(fovY / 2.0f);
+	Matrix4x4 m = {};
+	m.m[0][0] = f / aspect;
+	m.m[1][1] = f;
+	m.m[2][2] = farZ / (farZ - nearZ);
+	m.m[2][3] = 1.0f;
+	m.m[3][2] = -nearZ * farZ / (farZ - nearZ);
+	return m;
+}
+
+Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, float minD, float maxD) {
+	Matrix4x4 m = {};
+	m.m[0][0] = width / 2.0f;
+	m.m[1][1] = -height / 2.0f;
+	m.m[2][2] = maxD - minD;
+	m.m[3][0] = left + width / 2.0f;
+	m.m[3][1] = top + height / 2.0f;
+	m.m[3][2] = minD;
+	m.m[3][3] = 1.0f;
+	return m;
+}
+
 Matrix4x4 Inverse(const Matrix4x4& m) {
-	Matrix4x4 result = {};
-	float det =
-	    m.m[0][0] *
-	        (m.m[1][1] * (m.m[2][2] * m.m[3][3] - m.m[2][3] * m.m[3][2]) - m.m[1][2] * (m.m[2][1] * m.m[3][3] - m.m[2][3] * m.m[3][1]) + m.m[1][3] * (m.m[2][1] * m.m[3][2] - m.m[2][2] * m.m[3][1])) -
-	    m.m[0][1] *
-	        (m.m[1][0] * (m.m[2][2] * m.m[3][3] - m.m[2][3] * m.m[3][2]) - m.m[1][2] * (m.m[2][0] * m.m[3][3] - m.m[2][3] * m.m[3][0]) + m.m[1][3] * (m.m[2][0] * m.m[3][2] - m.m[2][2] * m.m[3][0])) +
-	    m.m[0][2] *
-	        (m.m[1][0] * (m.m[2][1] * m.m[3][3] - m.m[2][3] * m.m[3][1]) - m.m[1][1] * (m.m[2][0] * m.m[3][3] - m.m[2][3] * m.m[3][0]) + m.m[1][3] * (m.m[2][0] * m.m[3][1] - m.m[2][1] * m.m[3][0])) -
-	    m.m[0][3] *
-	        (m.m[1][0] * (m.m[2][1] * m.m[3][2] - m.m[2][2] * m.m[3][1]) - m.m[1][1] * (m.m[2][0] * m.m[3][2] - m.m[2][2] * m.m[3][0]) + m.m[1][2] * (m.m[2][0] * m.m[3][1] - m.m[2][1] * m.m[3][0]));
-	float invDet = 1.0f / det;
-	result.m[0][0] = invDet * (m.m[1][1] * (m.m[2][2] * m.m[3][3] - m.m[2][3] * m.m[3][2]) - m.m[1][2] * (m.m[2][1] * m.m[3][3] - m.m[2][3] * m.m[3][1]) +
-	                           m.m[1][3] * (m.m[2][1] * m.m[3][2] - m.m[2][2] * m.m[3][1]));
-	result.m[0][1] = invDet * -(m.m[0][1] * (m.m[2][2] * m.m[3][3] - m.m[2][3] * m.m[3][2]) - m.m[0][2] * (m.m[2][1] * m.m[3][3] - m.m[2][3] * m.m[3][1]) +
-	                            m.m[0][3] * (m.m[2][1] * m.m[3][2] - m.m[2][2] * m.m[3][1]));
-	result.m[0][2] = invDet * (m.m[0][1] * (m.m[1][2] * m.m[3][3] - m.m[1][3] * m.m[3][2]) - m.m[0][2] * (m.m[1][1] * m.m[3][3] - m.m[1][3] * m.m[3][1]) +
-	                           m.m[0][3] * (m.m[1][1] * m.m[3][2] - m.m[1][2] * m.m[3][1]));
-	result.m[0][3] = invDet * -(m.m[0][1] * (m.m[1][2] * m.m[2][3] - m.m[1][3] * m.m[2][2]) - m.m[0][2] * (m.m[1][1] * m.m[2][3] - m.m[1][3] * m.m[2][1]) +
-	                            m.m[0][3] * (m.m[1][1] * m.m[2][2] - m.m[1][2] * m.m[2][1]));
-	result.m[1][0] = invDet * -(m.m[1][0] * (m.m[2][2] * m.m[3][3] - m.m[2][3] * m.m[3][2]) - m.m[1][2] * (m.m[2][0] * m.m[3][3] - m.m[2][3] * m.m[3][0]) +
-	                            m.m[1][3] * (m.m[2][0] * m.m[3][2] - m.m[2][2] * m.m[3][0]));
-	result.m[1][1] = invDet * (m.m[0][0] * (m.m[2][2] * m.m[3][3] - m.m[2][3] * m.m[3][2]) - m.m[0][2] * (m.m[2][0] * m.m[3][3] - m.m[2][3] * m.m[3][0]) +
-	                           m.m[0][3] * (m.m[2][0] * m.m[3][2] - m.m[2][2] * m.m[3][0]));
-	result.m[1][2] = invDet * -(m.m[0][0] * (m.m[1][2] * m.m[3][3] - m.m[1][3] * m.m[3][2]) - m.m[0][2] * (m.m[1][0] * m.m[3][3] - m.m[1][3] * m.m[3][0]) +
-	                            m.m[0][3] * (m.m[1][0] * m.m[3][2] - m.m[1][2] * m.m[3][0]));
-	result.m[1][3] = invDet * (m.m[0][0] * (m.m[1][2] * m.m[2][3] - m.m[1][3] * m.m[2][2]) - m.m[0][2] * (m.m[1][0] * m.m[2][3] - m.m[1][3] * m.m[2][0]) +
-	                           m.m[0][3] * (m.m[1][0] * m.m[2][2] - m.m[1][2] * m.m[2][0]));
-	result.m[2][0] = invDet * (m.m[1][0] * (m.m[2][1] * m.m[3][3] - m.m[2][3] * m.m[3][1]) - m.m[1][1] * (m.m[2][0] * m.m[3][3] - m.m[2][3] * m.m[3][0]) +
-	                           m.m[1][3] * (m.m[2][0] * m.m[3][1] - m.m[2][1] * m.m[3][0]));
-	result.m[2][1] = invDet * -(m.m[0][0] * (m.m[2][1] * m.m[3][3] - m.m[2][3] * m.m[3][1]) - m.m[0][1] * (m.m[2][0] * m.m[3][3] - m.m[2][3] * m.m[3][0]) +
-	                            m.m[0][3] * (m.m[2][0] * m.m[3][1] - m.m[2][1] * m.m[3][0]));
-	result.m[2][2] = invDet * (m.m[0][0] * (m.m[1][1] * m.m[3][3] - m.m[1][3] * m.m[3][1]) - m.m[0][1] * (m.m[1][0] * m.m[3][3] - m.m[1][3] * m.m[3][0]) +
-	                           m.m[0][3] * (m.m[1][0] * m.m[3][1] - m.m[1][1] * m.m[3][0]));
-	result.m[2][3] = invDet * -(m.m[0][0] * (m.m[1][1] * m.m[2][3] - m.m[1][3] * m.m[2][1]) - m.m[0][1] * (m.m[1][0] * m.m[2][3] - m.m[1][3] * m.m[2][0]) +
-	                            m.m[0][3] * (m.m[1][0] * m.m[2][1] - m.m[1][1] * m.m[2][0]));
-	result.m[3][0] = invDet * -(m.m[1][0] * (m.m[2][1] * m.m[3][2] - m.m[2][2] * m.m[3][1]) - m.m[1][1] * (m.m[2][0] * m.m[3][2] - m.m[2][2] * m.m[3][0]) +
-	                            m.m[1][2] * (m.m[2][0] * m.m[3][1] - m.m[2][1] * m.m[3][0]));
-	result.m[3][1] = invDet * (m.m[0][0] * (m.m[2][1] * m.m[3][2] - m.m[2][2] * m.m[3][1]) - m.m[0][1] * (m.m[2][0] * m.m[3][2] - m.m[2][2] * m.m[3][0]) +
-	                           m.m[0][2] * (m.m[2][0] * m.m[3][1] - m.m[2][1] * m.m[3][0]));
-	result.m[3][2] = invDet * -(m.m[0][0] * (m.m[1][1] * m.m[3][2] - m.m[1][2] * m.m[3][1]) - m.m[0][1] * (m.m[1][0] * m.m[3][2] - m.m[1][2] * m.m[3][0]) +
-	                            m.m[0][2] * (m.m[1][0] * m.m[3][1] - m.m[1][1] * m.m[3][0]));
-	result.m[3][3] = invDet * (m.m[0][0] * (m.m[1][1] * m.m[2][2] - m.m[1][2] * m.m[2][1]) - m.m[0][1] * (m.m[1][0] * m.m[2][2] - m.m[1][2] * m.m[2][0]) +
-	                           m.m[0][2] * (m.m[1][0] * m.m[2][1] - m.m[1][1] * m.m[2][0]));
-	return result;
+	Matrix4x4 inv = {};
+	float det = 0.0f;
+	float mat[4][4];
+	for (int i = 0; i < 4; i++)
+		for (int j = 0; j < 4; j++)
+			mat[i][j] = m.m[i][j];
+	for (int i = 0; i < 4; i++) {
+		for (int j = 0; j < 4; j++) {
+			float sub[3][3];
+			int si = 0;
+			for (int row = 0; row < 4; row++) {
+				if (row == i)
+					continue;
+				int sj = 0;
+				for (int col = 0; col < 4; col++) {
+					if (col == j)
+						continue;
+					sub[si][sj++] = mat[row][col];
+				}
+				si++;
+			}
+			float minor =
+			    sub[0][0] * (sub[1][1] * sub[2][2] - sub[1][2] * sub[2][1]) - sub[0][1] * (sub[1][0] * sub[2][2] - sub[1][2] * sub[2][0]) + sub[0][2] * (sub[1][0] * sub[2][1] - sub[1][1] * sub[2][0]);
+			float cofactor = ((i + j) % 2 == 0 ? 1.0f : -1.0f) * minor;
+			inv.m[j][i] = cofactor;
+			if (j == 0)
+				det += mat[i][0] * cofactor;
+		}
+	}
+	if (fabsf(det) < 1e-6f)
+		return inv;
+	for (int i = 0; i < 4; i++)
+		for (int j = 0; j < 4; j++)
+			inv.m[i][j] /= det;
+	return inv;
 }
 
 Vector3 Transform(const Vector3& v, const Matrix4x4& m) {
@@ -103,161 +187,55 @@ Vector3 Transform(const Vector3& v, const Matrix4x4& m) {
 	float y = v.x * m.m[0][1] + v.y * m.m[1][1] + v.z * m.m[2][1] + m.m[3][1];
 	float z = v.x * m.m[0][2] + v.y * m.m[1][2] + v.z * m.m[2][2] + m.m[3][2];
 	float w = v.x * m.m[0][3] + v.y * m.m[1][3] + v.z * m.m[2][3] + m.m[3][3];
-	return {x / w, y / w, z / w};
-}
-
-Matrix4x4 MakeRotateXMatrix(float radian) {
-	Matrix4x4 result = {};
-	result.m[0][0] = 1.0f;
-	result.m[1][1] = cosf(radian);
-	result.m[1][2] = -sinf(radian);
-	result.m[2][1] = sinf(radian);
-	result.m[2][2] = cosf(radian);
-	result.m[3][3] = 1.0f;
-	return result;
-}
-
-Matrix4x4 MakeRotateYMatrix(float radian) {
-	Matrix4x4 result = {};
-	result.m[0][0] = cosf(radian);
-	result.m[0][2] = sinf(radian);
-	result.m[1][1] = 1.0f;
-	result.m[2][0] = -sinf(radian);
-	result.m[2][2] = cosf(radian);
-	result.m[3][3] = 1.0f;
-	return result;
-}
-
-Matrix4x4 MakeRotateZMatrix(float radian) {
-	Matrix4x4 result = {};
-	result.m[0][0] = cosf(radian);
-	result.m[0][1] = -sinf(radian);
-	result.m[1][0] = sinf(radian);
-	result.m[1][1] = cosf(radian);
-	result.m[2][2] = 1.0f;
-	result.m[3][3] = 1.0f;
-	return result;
-}
-
-Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Vector3& translate) {
-	Matrix4x4 rotateMatrix = Multiply(MakeRotateXMatrix(rotate.x), Multiply(MakeRotateYMatrix(rotate.y), MakeRotateZMatrix(rotate.z)));
-	Matrix4x4 result = {};
-	for (int row = 0; row < 3; row++)
-		for (int col = 0; col < 3; col++)
-			result.m[row][col] = rotateMatrix.m[row][col] * (&scale.x)[row];
-	result.m[3][0] = translate.x;
-	result.m[3][1] = translate.y;
-	result.m[3][2] = translate.z;
-	result.m[3][3] = 1.0f;
-	return result;
-}
-
-Matrix4x4 MakePerspectiveFovMatrix(float fovY, float aspectRatio, float nearClip, float farClip) {
-	Matrix4x4 result = {};
-	float tanHalfFovY = tanf(fovY / 2.0f);
-	result.m[0][0] = 1.0f / (aspectRatio * tanHalfFovY);
-	result.m[1][1] = 1.0f / tanHalfFovY;
-	result.m[2][2] = farClip / (farClip - nearClip);
-	result.m[2][3] = 1.0f;
-	result.m[3][2] = -nearClip * farClip / (farClip - nearClip);
-	return result;
-}
-
-Matrix4x4 MakeViewportMatrix(float left, float top, float width, float height, float minDepth, float maxDepth) {
-	Matrix4x4 result = {};
-	result.m[0][0] = width / 2.0f;
-	result.m[1][1] = -height / 2.0f;
-	result.m[2][2] = maxDepth - minDepth;
-	result.m[3][0] = left + width / 2.0f;
-	result.m[3][1] = top + height / 2.0f;
-	result.m[3][2] = minDepth;
-	result.m[3][3] = 1.0f;
-	return result;
-}
-
-bool IsCollision(const Sphere& sphere, const Plane& plane) {
-	float d = Dot(plane.normal, sphere.center) - plane.distance;
-	return fabsf(d) <= sphere.radius;
-}
-
-Vector3 Perpendicular(const Vector3& v) {
-	if (v.x != 0.0f || v.y != 0.0f) {
-		return {-v.y, v.x, 0.0f};
-	}
-	return {0.0f, -v.z, v.y};
+	if (fabsf(w) > 1e-6f)
+		return {x / w, y / w, z / w};
+	return {x, y, z};
 }
 
 void DrawGrid(const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix) {
-	const float kGridHalfExtent = 2.0f;
-	const uint32_t kSubdivision = 10;
-	const float step = kGridHalfExtent * 2.0f / float(kSubdivision);
-
-	for (uint32_t i = 0; i <= kSubdivision; ++i) {
-		float x = -kGridHalfExtent + step * float(i);
-		float z = -kGridHalfExtent + step * float(i);
-
-		Vector3 startX = Transform(Transform({x, 0.0f, -kGridHalfExtent}, viewProjectionMatrix), viewportMatrix);
-		Vector3 endX = Transform(Transform({x, 0.0f, kGridHalfExtent}, viewProjectionMatrix), viewportMatrix);
-		Novice::DrawLine(int(startX.x), int(startX.y), int(endX.x), int(endX.y), 0xAAAAAAFF);
-
-		Vector3 startZ = Transform(Transform({-kGridHalfExtent, 0.0f, z}, viewProjectionMatrix), viewportMatrix);
-		Vector3 endZ = Transform(Transform({kGridHalfExtent, 0.0f, z}, viewProjectionMatrix), viewportMatrix);
-		Novice::DrawLine(int(startZ.x), int(startZ.y), int(endZ.x), int(endZ.y), 0xAAAAAAFF);
+	const float kGridHalfWidth = 2.0f;
+	const int kSubdivision = 10;
+	const float kStep = kGridHalfWidth * 2.0f / kSubdivision;
+	for (int i = 0; i <= kSubdivision; i++) {
+		float x = -kGridHalfWidth + kStep * i;
+		Vector3 s = Transform(Transform({x, 0, -kGridHalfWidth}, viewProjectionMatrix), viewportMatrix);
+		Vector3 e = Transform(Transform({x, 0, kGridHalfWidth}, viewProjectionMatrix), viewportMatrix);
+		uint32_t color = (i == kSubdivision / 2) ? 0x000000FF : 0xAAAAAAFF;
+		Novice::DrawLine((int)s.x, (int)s.y, (int)e.x, (int)e.y, color);
+	}
+	for (int i = 0; i <= kSubdivision; i++) {
+		float z = -kGridHalfWidth + kStep * i;
+		Vector3 s = Transform(Transform({-kGridHalfWidth, 0, z}, viewProjectionMatrix), viewportMatrix);
+		Vector3 e = Transform(Transform({kGridHalfWidth, 0, z}, viewProjectionMatrix), viewportMatrix);
+		uint32_t color = (i == kSubdivision / 2) ? 0x000000FF : 0xAAAAAAFF;
+		Novice::DrawLine((int)s.x, (int)s.y, (int)e.x, (int)e.y, color);
 	}
 }
 
-void DrawSphere(const Sphere& sphere, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
-	const uint32_t kSubdivision = 16;
-	const float kpi = 3.14159265f;
-	const float kLatStep = kpi / float(kSubdivision);
-	const float kLonStep = 2.0f * kpi / float(kSubdivision);
-
-	for (uint32_t lat = 0; lat < kSubdivision; ++lat) {
-		float theta = -kpi / 2.0f + kLatStep * float(lat);
-		float theta1 = theta + kLatStep;
-
-		for (uint32_t lon = 0; lon < kSubdivision; ++lon) {
-			float phi = kLonStep * float(lon);
-			float phi1 = phi + kLonStep;
-
-			Vector3 a = {sphere.center.x + sphere.radius * cosf(theta) * cosf(phi), sphere.center.y + sphere.radius * sinf(theta), sphere.center.z + sphere.radius * cosf(theta) * sinf(phi)};
-			Vector3 b = {sphere.center.x + sphere.radius * cosf(theta1) * cosf(phi), sphere.center.y + sphere.radius * sinf(theta1), sphere.center.z + sphere.radius * cosf(theta1) * sinf(phi)};
-			Vector3 c = {sphere.center.x + sphere.radius * cosf(theta) * cosf(phi1), sphere.center.y + sphere.radius * sinf(theta), sphere.center.z + sphere.radius * cosf(theta) * sinf(phi1)};
-			Vector3 d = {sphere.center.x + sphere.radius * cosf(theta1) * cosf(phi1), sphere.center.y + sphere.radius * sinf(theta1), sphere.center.z + sphere.radius * cosf(theta1) * sinf(phi1)};
-
-			Vector3 sa = Transform(Transform(a, viewProjectionMatrix), viewportMatrix);
-			Vector3 sb = Transform(Transform(b, viewProjectionMatrix), viewportMatrix);
-			Vector3 sc = Transform(Transform(c, viewProjectionMatrix), viewportMatrix);
-			Vector3 sd = Transform(Transform(d, viewProjectionMatrix), viewportMatrix);
-
-			Novice::DrawLine(int(sa.x), int(sa.y), int(sb.x), int(sb.y), color);
-			Novice::DrawLine(int(sa.x), int(sa.y), int(sc.x), int(sc.y), color);
-			Novice::DrawLine(int(sb.x), int(sb.y), int(sd.x), int(sd.y), color);
-			Novice::DrawLine(int(sc.x), int(sc.y), int(sd.x), int(sd.y), color);
-		}
-	}
+void DrawSegment(const Segment& segment, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
+	Vector3 endPoint = Add(segment.origin, segment.diff);
+	Vector3 start = Transform(Transform(segment.origin, viewProjectionMatrix), viewportMatrix);
+	Vector3 end = Transform(Transform(endPoint, viewProjectionMatrix), viewportMatrix);
+	Novice::DrawLine((int)start.x, (int)start.y, (int)end.x, (int)end.y, color);
 }
 
 void DrawPlane(const Plane& plane, const Matrix4x4& viewProjectionMatrix, const Matrix4x4& viewportMatrix, uint32_t color) {
-	Vector3 center = Multiply(plane.distance, plane.normal);
-
-	Vector3 perpendiculars[4];
-	perpendiculars[0] = Normalize(Perpendicular(plane.normal));
-	perpendiculars[1] = {-perpendiculars[0].x, -perpendiculars[0].y, -perpendiculars[0].z};
-	perpendiculars[2] = Cross(plane.normal, perpendiculars[0]);
-	perpendiculars[3] = {-perpendiculars[2].x, -perpendiculars[2].y, -perpendiculars[2].z};
+	Vector3 center = Scale(plane.normal, plane.distance);
+	Vector3 perps[4];
+	perps[0] = Normalize(Perpendicular(plane.normal));
+	perps[1] = {-perps[0].x, -perps[0].y, -perps[0].z};
+	perps[2] = Cross(plane.normal, perps[0]);
+	perps[3] = {-perps[2].x, -perps[2].y, -perps[2].z};
 
 	Vector3 points[4];
-	for (int32_t i = 0; i < 4; ++i) {
-		Vector3 extend = Multiply(2.0f, perpendiculars[i]);
-		Vector3 point = Add(center, extend);
+	for (int i = 0; i < 4; i++) {
+		Vector3 point = Add(center, Scale(perps[i], 2.0f));
 		points[i] = Transform(Transform(point, viewProjectionMatrix), viewportMatrix);
 	}
-
-	Novice::DrawLine(int(points[0].x), int(points[0].y), int(points[2].x), int(points[2].y), color);
-	Novice::DrawLine(int(points[2].x), int(points[2].y), int(points[1].x), int(points[1].y), color);
-	Novice::DrawLine(int(points[1].x), int(points[1].y), int(points[3].x), int(points[3].y), color);
-	Novice::DrawLine(int(points[3].x), int(points[3].y), int(points[0].x), int(points[0].y), color);
+	Novice::DrawLine((int)points[0].x, (int)points[0].y, (int)points[2].x, (int)points[2].y, color);
+	Novice::DrawLine((int)points[2].x, (int)points[2].y, (int)points[1].x, (int)points[1].y, color);
+	Novice::DrawLine((int)points[1].x, (int)points[1].y, (int)points[3].x, (int)points[3].y, color);
+	Novice::DrawLine((int)points[3].x, (int)points[3].y, (int)points[0].x, (int)points[0].y, color);
 }
 
 // Windowsアプリでのエントリーポイント(main関数)
@@ -270,15 +248,17 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	char keys[256] = {0};
 	char preKeys[256] = {0};
 
-	Vector3 cameraTranslate = {0.180f, -2.0f, 6.49f};
-	Vector3 cameraRotate = {-0.226f, -0.02f, 0.0f};
+	Vector3 cameraTranslate{0.0f, 1.9f, -6.49f};
+	Vector3 cameraRotate{0.26f, 0.0f, 0.0f};
 
-	Sphere sphere = {
-	    {0.12f, 0.24f, 0.0f},
-        0.6f
+	Segment segment{
+	    {-0.69f, 0.33f, 0.0f},
+        {0.07f,  0.58f, 0.0f}
     };
 
-	Plane plane = {Normalize({0.0f, 1.0f, 0.0f}), 0.0f};
+	Plane plane;
+	plane.normal = Normalize({-0.336f, 0.942f, 0.0f});
+	plane.distance = 1.0f;
 
 	// ウィンドウの×ボタンが押されるまでループ
 	while (Novice::ProcessMessage() == 0) {
@@ -294,21 +274,21 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		///
 
 		ImGui::Begin("Window");
-		ImGui::DragFloat3("CameraTranslate", &cameraTranslate.x, 0.01f);
-		ImGui::DragFloat3("CameraRotate", &cameraRotate.x, 0.01f);
-		ImGui::DragFloat3("Sphere.Center", &sphere.center.x, 0.01f);
-		ImGui::DragFloat("Sphere.Radius", &sphere.radius, 0.01f);
 		ImGui::DragFloat3("Plane.Normal", &plane.normal.x, 0.01f);
+		plane.normal = Normalize(plane.normal);
 		ImGui::DragFloat("Plane.Distance", &plane.distance, 0.01f);
+		ImGui::DragFloat3("Segment.Origin", &segment.origin.x, 0.01f);
+		ImGui::DragFloat3("Segment.Diff", &segment.diff.x, 0.01f);
 		ImGui::End();
 
-		plane.normal = Normalize(plane.normal);
-
-		Matrix4x4 cameraMatrix = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, cameraRotate, cameraTranslate);
+		Matrix4x4 cameraRotateMatrix = Multiply(Multiply(MakeRotateXMatrix(cameraRotate.x), MakeRotateYMatrix(cameraRotate.y)), MakeRotateZMatrix(cameraRotate.z));
+		Matrix4x4 cameraMatrix = Multiply(cameraRotateMatrix, MakeTranslateMatrix(cameraTranslate));
 		Matrix4x4 viewMatrix = Inverse(cameraMatrix);
 		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, float(kWindowWidth) / float(kWindowHeight), 0.1f, 100.0f);
 		Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
 		Matrix4x4 viewportMatrix = MakeViewportMatrix(0, 0, float(kWindowWidth), float(kWindowHeight), 0.0f, 1.0f);
+
+		bool collision = IsCollision(segment, plane);
 
 		///
 		/// ↑更新処理ここまで
@@ -318,12 +298,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		/// ↓描画処理ここから
 		///
 
-	bool collision = IsCollision(sphere, plane);
-		uint32_t sphereColor = collision ? RED : WHITE;
-
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
-		DrawPlane(plane, viewProjectionMatrix, viewportMatrix, WHITE);       
-		DrawSphere(sphere, viewProjectionMatrix, viewportMatrix, sphereColor); 
+		DrawPlane(plane, viewProjectionMatrix, viewportMatrix, 0xFFFFFFFF);
+		uint32_t segColor = collision ? 0xFF0000FF : 0xFFFFFFFF;
+		DrawSegment(segment, viewProjectionMatrix, viewportMatrix, segColor);
 
 		///
 		/// ↑描画処理ここまで
