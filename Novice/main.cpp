@@ -13,7 +13,7 @@ const int kWindowHeight = 720;
 constexpr float kPi = 3.14159265358979323846f;
 
 struct Vector3 {
-	float x, y, z;
+	float x, y, z;x
 };
 
 struct Matrix4x4 {
