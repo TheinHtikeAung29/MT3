@@ -318,7 +318,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		/// ↓描画処理ここから
 		///
 
-	bool collision = IsCollision(sphere, plane);
+		bool collision = IsCollision(sphere, plane);
 		uint32_t sphereColor = collision ? RED : WHITE;
 
 		DrawGrid(viewProjectionMatrix, viewportMatrix);
